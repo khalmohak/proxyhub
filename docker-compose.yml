@@ -27,11 +27,16 @@ services:
       - "${PROXY_PORT:-8080}:8080"
       - "${API_PORT:-3000}:3000"
     environment:
+      # Database — defaults to PostgreSQL (bundled service).
+      # Set DB_TYPE=sqlite and remove the postgres service to run without PostgreSQL.
+      DB_TYPE: ${DB_TYPE:-postgres}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: proxymanager
       DB_USER: postgres
       DB_PASSWORD: ${DB_PASSWORD:-proxymanager123}
+      # SQLite path (only used when DB_TYPE=sqlite)
+      DB_PATH: /data/proxyhub.db
       API_PORT: 3000
       PROXY_PORT: 8080
       REQUIRE_AUTH: ${REQUIRE_AUTH:-false}
@@ -39,6 +44,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
       SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-30}
       NODE_ENV: production
+    volumes:
+      # Persist SQLite data file (used when DB_TYPE=sqlite)
+      - sqlitedata:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,6 +66,7 @@ services:
 
 volumes:
   pgdata:
+  sqlitedata:
 
 networks:
   proxy-net:

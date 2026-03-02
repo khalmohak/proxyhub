@@ -1,0 +1,25 @@
+{
+  "name": "proxyhub",
+  "version": "1.0.0",
+  "description": "Self-hosted rotating proxy manager with web dashboard",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/khalmohak/proxyhub.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "setup":         "npm install --prefix backend && npm install --prefix frontend",
+    "dev":           "concurrently --names \"API,UI\" --prefix-colors \"cyan,magenta\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "build":         "npm run build --prefix frontend",
+    "start":         "node backend/src/index.js",
+    "start:fresh":   "npm run build && node backend/src/index.js",
+    "lint:backend":  "node --check backend/src/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

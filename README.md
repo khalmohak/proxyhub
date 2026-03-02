@@ -7,10 +7,11 @@
 **Self-hosted rotating proxy manager with a modern dashboard**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen?logo=node.js&logoColor=white)](https://nodejs.org)
-[![PostgreSQL](https://img.shields.io/badge/postgres-16-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![SQLite](https://img.shields.io/badge/SQLite-default_DB-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org)
+[![PostgreSQL](https://img.shields.io/badge/postgres-optional-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![React](https://img.shields.io/badge/react-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 
 [Features](#features) · [Quick Start](#quick-start) · [Configuration](#configuration) · [API Reference](#api-reference) · [Contributing](#contributing)
 
@@ -44,13 +45,60 @@ One `docker compose up` and you're running.
 | 📋 **Request logs** | Filter by device, proxy, status, host, date range — export CSV |
 | 🔒 **Auth protection** | Onboarding wizard, JWT-protected dashboard, bcrypt password |
 | 🔁 **Auto sync** | Background scheduler refreshes proxy health & geo on a cron |
-| 🐳 **Docker-first** | Single `docker compose up --build` — no manual setup |
+| 🗄 **SQLite by default** | Zero-config embedded DB — no external database needed |
+| 🐘 **PostgreSQL optional** | Set `DB_TYPE=postgres` to use an external PostgreSQL instance |
+| 🐳 **Docker support** | `docker compose up --build` for a fully containerised deployment |
 | ⚙️ **Settings page** | Edit server name, password, proxy config from the dashboard |
 | 📤 **Bulk import** | Paste `host:port:user:pass` lines or upload a `.txt` file |
 
 ---
 
 ## Quick Start
+
+### Option A — Standalone (no Docker required)
+
+**Prerequisites:** Node.js ≥ 18 · npm
+
+```bash
+git clone https://github.com/khalmohak/proxyhub.git
+cd proxyhub
+
+# One-command install (installs deps, builds UI, creates .env, optional systemd)
+bash install.sh
+```
+
+Then open **http://localhost:3000** — the setup wizard runs on first visit.
+
+**Manual steps** (same thing, step by step):
+
+```bash
+# 1. Install dependencies
+npm run setup        # installs backend + frontend node_modules
+
+# 2. Create your .env
+cp .env.example .env
+# Edit .env — set JWT_SECRET to a long random string
+
+# 3. Build the React UI
+npm run build
+
+# 4. Start the server  (dashboard + API served from port 3000)
+npm start
+```
+
+> **Database:** SQLite is used by default — a single file at `~/.proxyhub/proxyhub.db`. No PostgreSQL needed. To use PostgreSQL instead, set `DB_TYPE=postgres` and the `DB_HOST/DB_NAME/DB_USER/DB_PASSWORD` vars in `.env`.
+
+**Development mode** (hot-reload for both backend and frontend):
+
+```bash
+npm run dev
+# Frontend dev server → http://localhost:5173
+# Backend API         → http://localhost:3000
+```
+
+---
+
+### Option B — Docker Compose
 
 **Prerequisites:** Docker + Docker Compose
 
@@ -60,7 +108,7 @@ cd proxyhub
 
 # 1. Copy and configure environment
 cp .env.example .env
-# Edit .env — at minimum set a strong DB_PASSWORD and JWT_SECRET
+# Edit .env — set DB_TYPE=postgres, a strong DB_PASSWORD and JWT_SECRET
 
 # 2. Start everything
 docker compose up --build -d
@@ -68,6 +116,8 @@ docker compose up --build -d
 # 3. Open the dashboard
 open http://localhost:8888
 ```
+
+---
 
 On first open, the **setup wizard** guides you through:
 1. Naming your server
@@ -80,6 +130,22 @@ That's it — add proxies, register devices, start routing.
 
 ## Architecture
 
+**Standalone mode** (single Node.js process, SQLite):
+
+```
+┌─────────────┐  host:port  ┌──────────────────────────────────┐
+│   Device    │────────────▶│  Rotating Proxy Server  :8080    │
+│  (any app)  │             │  (proxy-chain, round-robin)      │
+└─────────────┘             └──────────────┬───────────────────┘
+                                           │
+┌─────────────┐             ┌──────────────▼───────────────────┐
+│  SQLite DB  │◀────────────│  Express (API + Dashboard) :3000 │
+│  ~/.proxyhub│             │  Auth · Proxies · Devices · Logs │
+└─────────────┘             └──────────────────────────────────┘
+```
+
+**Docker mode** (PostgreSQL, nginx):
+
 ```
 ┌─────────────┐    JWT      ┌──────────────────────────────────┐
 │  Browser /  │────────────▶│  React Dashboard  :8888 (nginx)  │
@@ -88,21 +154,19 @@ That's it — add proxies, register devices, start routing.
                                            ▼
 ┌─────────────┐  host:port  ┌──────────────────────────────────┐
 │   Device    │────────────▶│  Rotating Proxy Server  :8080    │
-│  (any app)  │             │  (proxy-chain, round-robin)      │
-└─────────────┘             └──────────────┬───────────────────┘
-                                           │ upstream proxies
+│  (any app)  │             └──────────────┬───────────────────┘
+└─────────────┘                            │
 ┌─────────────┐             ┌──────────────▼───────────────────┐
 │  PostgreSQL │◀────────────│  Express API Server     :3000    │
 │  :5432      │             │  Auth · Proxies · Devices · Logs │
 └─────────────┘             └──────────────────────────────────┘
 ```
 
-| Service | Port | Description |
-|---|---|---|
-| Dashboard | `:8888` | React UI served by nginx |
-| API | `:3000` | Express REST API |
-| Proxy | `:8080` | Rotating HTTP proxy endpoint |
-| PostgreSQL | `:5432` | Internal only (not exposed by default) |
+| Service | Standalone | Docker | Description |
+|---|---|---|---|
+| Dashboard + API | `:3000` | `:8888` / `:3000` | Web UI + REST API |
+| Proxy | `:8080` | `:8080` | Rotating HTTP proxy endpoint |
+| Database | SQLite file | PostgreSQL `:5432` | Storage |
 
 ---
 
@@ -112,18 +176,29 @@ Copy `.env.example` to `.env` and set your values:
 
 | Variable | Default | Description |
 |---|---|---|
+| **Database** | | |
+| `DB_TYPE` | `sqlite` | Database backend: `sqlite` or `postgres` |
+| `DB_PATH` | `~/.proxyhub/proxyhub.db` | SQLite file path (only when `DB_TYPE=sqlite`) |
+| `DB_HOST` | `localhost` | PostgreSQL host (only when `DB_TYPE=postgres`) |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_NAME` | `proxymanager` | PostgreSQL database name |
+| `DB_USER` | `postgres` | PostgreSQL user |
 | `DB_PASSWORD` | `proxymanager123` | PostgreSQL password |
+| **Ports** | | |
 | `PROXY_PORT` | `8080` | Rotating proxy listen port |
-| `API_PORT` | `3000` | REST API listen port |
-| `FRONTEND_PORT` | `8888` | Dashboard port |
+| `API_PORT` | `3000` | REST API + dashboard port (standalone) |
+| `FRONTEND_PORT` | `8888` | Dashboard port (Docker/nginx only) |
+| **Auth** | | |
 | `REQUIRE_AUTH` | `false` | Require device API key for proxy connections |
 | `ADMIN_PASSWORD` | _(empty)_ | Override dashboard password via env (useful for headless deploys / resets) |
 | `JWT_SECRET` | _(change me)_ | Secret for signing JWT tokens — **must be set in production** |
+| **Sync** | | |
 | `SYNC_INTERVAL_MINUTES` | `30` | How often the background scheduler syncs proxy health + geo. Set `0` to disable. |
 
 > **Production checklist**
-> - Set a unique `DB_PASSWORD`
 > - Set a long random `JWT_SECRET`
+> - For SQLite: ensure `DB_PATH` points to a persistent directory
+> - For PostgreSQL: set a unique `DB_PASSWORD`
 > - Set `REQUIRE_AUTH=true` if devices should authenticate
 
 ---
@@ -189,7 +264,7 @@ Set `HTTP_PROXY` / `HTTPS_PROXY` — most HTTP libraries respect these automatic
 | **Proxies** | Add, bulk import, enable/disable, health-check, sync metadata, delete |
 | **Devices** | Register devices, view API keys, toggle, delete |
 | **Logs** | Full request log — filter by proxy, device, status, host, date. Export CSV |
-| **Settings** | Server name, password, proxy config, auto-sync status |
+| **Settings** | Server name, password, proxy config, auto-sync, database status |
 
 ---
 
@@ -252,34 +327,70 @@ GET    /api/stats                    — aggregated stats + hourly chart data (l
 
 ### Prerequisites
 - Node.js ≥ 18
-- PostgreSQL 16 (or use Docker just for the DB)
 
-### Run locally without Docker
+### Hot-reload dev mode (SQLite, no Docker needed)
 
 ```bash
-# Start PostgreSQL (Docker only for DB)
+git clone https://github.com/khalmohak/proxyhub.git
+cd proxyhub
+npm run setup        # installs backend + frontend dependencies
+cp .env.example .env # set JWT_SECRET
+npm run dev
+# Frontend → http://localhost:5173  (Vite dev server, hot-reload)
+# Backend  → http://localhost:3000  (nodemon, auto-restart)
+```
+
+### Production build (standalone)
+
+```bash
+npm run build        # compiles React → frontend/dist
+npm start            # serves dashboard + API on port 3000, proxy on 8080
+# open http://localhost:3000
+```
+
+### Run as a Linux system service (systemd)
+
+```bash
+# Automated (run as root or with sudo)
+sudo bash install.sh
+
+# Manual
+sudo cp proxyhub.service /etc/systemd/system/
+# Edit WorkingDirectory and User in the service file
+sudo systemctl daemon-reload
+sudo systemctl enable --now proxyhub
+
+# Logs
+sudo journalctl -u proxyhub -f
+```
+
+### Using PostgreSQL instead of SQLite
+
+```bash
+# .env
+DB_TYPE=postgres
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=proxymanager
+DB_USER=postgres
+DB_PASSWORD=your_password
+```
+
+Or spin up just the PostgreSQL container from the Docker Compose file:
+
+```bash
 docker compose up postgres -d
-
-# Backend
-cd backend
-npm install
-cp ../.env.example .env   # edit DB_HOST=localhost
-npm run dev
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev
-# open http://localhost:5173
+# then npm start with DB_TYPE=postgres in .env
 ```
 
 ### Project structure
+
 ```
-proxy-manager/
+proxyhub/
 ├── backend/
 │   └── src/
-│       ├── index.js          Express entry point + auto-sync scheduler
-│       ├── db.js             PostgreSQL schema + migrations
+│       ├── index.js          Express entry point + static serving + auto-sync
+│       ├── db.js             SQLite + PostgreSQL adapter with SQL translation layer
 │       ├── proxy-server.js   Rotating proxy (proxy-chain)
 │       ├── middleware/
 │       │   └── auth.js       JWT middleware
@@ -289,7 +400,8 @@ proxy-manager/
 │           ├── proxies.js    Proxy CRUD + health + geo sync
 │           ├── devices.js    Device management
 │           ├── logs.js       Log query + CSV export
-│           └── stats.js      Dashboard aggregations
+│           ├── stats.js      Dashboard aggregations
+│           └── db.js         DB status + connection test
 └── frontend/
     └── src/
         ├── App.jsx           Route guards (auth + onboarding)
@@ -303,7 +415,7 @@ proxy-manager/
             ├── Proxies.jsx   + SyncPanel component
             ├── Devices.jsx
             ├── Logs.jsx
-            ├── Settings.jsx
+            ├── Settings.jsx  (General · Security · Proxy · Auto Sync · Database)
             ├── Login.jsx
             └── Onboarding.jsx
 ```
@@ -311,6 +423,17 @@ proxy-manager/
 ---
 
 ## Useful Commands
+
+**Standalone:**
+
+```bash
+npm start                    # start production server
+npm run dev                  # start dev servers (hot-reload)
+npm run build                # rebuild frontend
+sudo journalctl -u proxyhub -f   # view service logs (systemd)
+```
+
+**Docker:**
 
 ```bash
 # View live backend logs
@@ -321,9 +444,6 @@ docker compose exec postgres psql -U postgres -d proxymanager
 
 # Rebuild after code changes
 docker compose up --build -d backend
-
-# Restart a single service
-docker compose restart backend
 
 # Stop everything (data preserved)
 docker compose down

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
   User, Lock, Server, RefreshCw, Save, Eye, EyeOff,
-  CheckCircle2, AlertCircle, Loader2, Clock, Zap,
+  CheckCircle2, AlertCircle, Loader2, Clock, Zap, Database,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { settingsApi, proxiesApi } from '../api';
+import { settingsApi, proxiesApi, dbApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -287,6 +288,183 @@ function AutoSyncSection({ settings, syncStatus, onSyncNow }) {
   );
 }
 
+/* ─── Database Section ───────────────────────────────────── */
+function DatabaseSection() {
+  const [status, setStatus]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showTest, setShowTest] = useState(false);
+  const [testForm, setTestForm] = useState({ host: '', port: '5432', database: 'proxymanager', user: 'postgres', password: '' });
+  const [testing,  setTesting]  = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [showPass, setShowPass]     = useState(false);
+
+  useEffect(() => {
+    dbApi.status()
+      .then(r => setStatus(r.data))
+      .catch(() => setStatus({ type: 'unknown', connected: false }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await dbApi.test(testForm);
+      setTestResult(r.data);
+    } catch (e) {
+      setTestResult({ ok: false, error: e.message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const setField = k => e => setTestForm(f => ({ ...f, [k]: e.target.value }));
+
+  const isSQLite = status?.type === 'sqlite';
+
+  function formatBytes(b) {
+    if (!b) return '—';
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  return (
+    <div className="settings-section">
+      <SectionHeader icon={Database} iconBg="bg-slate-600" title="Database" description="Storage backend for proxies, devices, and logs" />
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <Loader2 size={14} className="animate-spin" /> Checking connection…
+        </div>
+      ) : (
+        <>
+          {/* Status row */}
+          <div className="flex items-center gap-3">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset
+              ${isSQLite ? 'bg-amber-50 text-amber-800 ring-amber-600/20' : 'bg-blue-50 text-blue-800 ring-blue-600/20'}`}>
+              {isSQLite ? '🗄 SQLite' : '🐘 PostgreSQL'}
+            </span>
+            <span className={`flex items-center gap-1.5 text-xs font-medium ${status?.connected ? 'text-emerald-600' : 'text-red-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${status?.connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+              {status?.connected ? 'Connected' : 'Connection error'}
+            </span>
+          </div>
+
+          {status?.error && (
+            <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{status.error}</p>
+          )}
+
+          {/* Details */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {isSQLite ? (
+              <>
+                <div className="bg-gray-50 rounded-xl p-3.5">
+                  <p className="text-xs text-gray-400 mb-1">File Path</p>
+                  <p className="text-xs font-mono text-gray-700 break-all">{status?.path || '—'}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3.5">
+                  <p className="text-xs text-gray-400 mb-1">File Size</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatBytes(status?.size_bytes)}</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-gray-50 rounded-xl p-3.5">
+                  <p className="text-xs text-gray-400 mb-1">Host</p>
+                  <p className="text-sm font-mono text-gray-800">{status?.host}:{status?.port}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3.5">
+                  <p className="text-xs text-gray-400 mb-1">Database</p>
+                  <p className="text-sm font-mono text-gray-800">{status?.database}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3.5">
+                  <p className="text-xs text-gray-400 mb-1">User</p>
+                  <p className="text-sm font-mono text-gray-800">{status?.user}</p>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Test / Switch accordion */}
+          <div className="border border-gray-100 rounded-xl overflow-hidden">
+            <button
+              onClick={() => { setShowTest(v => !v); setTestResult(null); }}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-sm font-medium text-gray-700 transition-colors"
+            >
+              <span>Test a PostgreSQL connection</span>
+              {showTest ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+
+            {showTest && (
+              <div className="p-4 space-y-4 border-t border-gray-100">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="label">Host</label>
+                    <input className="input" placeholder="localhost" value={testForm.host} onChange={setField('host')} />
+                  </div>
+                  <div>
+                    <label className="label">Port</label>
+                    <input className="input" type="number" placeholder="5432" value={testForm.port} onChange={setField('port')} />
+                  </div>
+                  <div>
+                    <label className="label">Database</label>
+                    <input className="input" placeholder="proxymanager" value={testForm.database} onChange={setField('database')} />
+                  </div>
+                  <div>
+                    <label className="label">Username</label>
+                    <input className="input" placeholder="postgres" value={testForm.user} onChange={setField('user')} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label">Password</label>
+                    <div className="relative">
+                      <input
+                        type={showPass ? 'text' : 'password'}
+                        className="input pr-9"
+                        placeholder="password"
+                        value={testForm.password}
+                        onChange={setField('password')}
+                      />
+                      <button type="button" onClick={() => setShowPass(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <Eye size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {testResult && (
+                  <div className={`flex items-start gap-2 text-sm rounded-xl px-3 py-2.5 border
+                    ${testResult.ok
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-red-50 border-red-200 text-red-700'}`}>
+                    {testResult.ok
+                      ? <><CheckCircle2 size={14} className="mt-0.5 shrink-0" /> {testResult.version} · {testResult.latency_ms}ms</>
+                      : <><AlertCircle  size={14} className="mt-0.5 shrink-0" /> {testResult.error}</>
+                    }
+                  </div>
+                )}
+
+                <button onClick={runTest} disabled={testing || !testForm.host} className="btn-secondary">
+                  {testing ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+                  {testing ? 'Testing…' : 'Test Connection'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Switch instructions */}
+          <div className="bg-gray-50 rounded-xl px-4 py-3 text-xs text-gray-500 space-y-1">
+            <p className="font-semibold text-gray-700">Switching databases</p>
+            <p>Set <code className="font-mono bg-gray-200 px-1 rounded">DB_TYPE=sqlite</code> or <code className="font-mono bg-gray-200 px-1 rounded">DB_TYPE=postgres</code> in your <code className="font-mono bg-gray-200 px-1 rounded">.env</code> file and restart the server.</p>
+            <p className="pt-0.5">For SQLite, also set <code className="font-mono bg-gray-200 px-1 rounded">DB_PATH=/your/custom/path.db</code> (default: <code className="font-mono bg-gray-200 px-1 rounded">~/.proxyhub/proxyhub.db</code>).</p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Settings Page ─────────────────────────────────── */
 export default function Settings() {
   const [settings, setSettings]     = useState(null);
@@ -341,6 +519,7 @@ export default function Settings() {
       <SecuritySection    settings={settings} />
       <ProxyServerSection settings={settings} onSaved={loadSettings} />
       <AutoSyncSection    settings={settings} syncStatus={syncStatus} onSyncNow={triggerSync} />
+      <DatabaseSection />
     </div>
   );
 }

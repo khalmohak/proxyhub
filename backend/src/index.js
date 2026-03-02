@@ -1,4 +1,9 @@
-require('dotenv').config();
+// Load .env from project root first, then backend directory as fallback
+const path = require('path');
+const fs   = require('fs');
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config(); // fallback: CWD/.env or backend/.env
+
 const express = require('express');
 const cors    = require('cors');
 const morgan  = require('morgan');
@@ -13,6 +18,7 @@ const proxiesRouter  = require('./routes/proxies');
 const logsRouter     = require('./routes/logs');
 const devicesRouter  = require('./routes/devices');
 const statsRouter    = require('./routes/stats');
+const dbRouter       = require('./routes/db');
 
 const { runBackgroundSync } = require('./routes/proxies');
 
@@ -34,8 +40,21 @@ app.use('/api/proxies',  proxiesRouter);
 app.use('/api/logs',     logsRouter);
 app.use('/api/devices',  devicesRouter);
 app.use('/api/stats',    statsRouter);
+app.use('/api/db',       dbRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+
+// ── Serve built frontend (standalone / non-Docker mode) ──────────────────
+// Placed after all API routes so /api/* takes priority.
+// The SPA fallback only fires for non-API, non-health paths.
+const frontendDist = path.join(__dirname, '../../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get(/^(?!\/(api|health))/, (_req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+  console.log(`[static] Serving frontend from ${frontendDist}`);
+}
 
 app.use((err, _req, res, _next) => {
   console.error(err);

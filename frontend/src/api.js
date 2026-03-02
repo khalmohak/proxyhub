@@ -63,3 +63,8 @@ export const devicesApi = {
 export const statsApi = {
   get: () => http.get('/stats'),
 };
+
+export const dbApi = {
+  status: ()     => http.get('/db/status'),
+  test:   (data) => http.post('/db/test', data),
+};

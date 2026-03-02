@@ -1,0 +1,27 @@
+# ProxyHub systemd service
+#
+# Install:
+#   sudo cp proxyhub.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now proxyhub
+#
+# Edit WorkingDirectory and User below to match your setup.
+
+[Unit]
+Description=ProxyHub - Self-hosted rotating proxy manager
+After=network.target
+
+[Service]
+Type=simple
+User=proxyhub
+WorkingDirectory=/opt/proxyhub
+ExecStart=/usr/bin/node /opt/proxyhub/backend/src/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proxyhub
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

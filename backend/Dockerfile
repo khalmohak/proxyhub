@@ -1,6 +1,7 @@
 FROM node:20-alpine
 
-RUN apk add --no-cache curl
+# Build tools needed for better-sqlite3 native compilation on Alpine
+RUN apk add --no-cache curl python3 make g++
 
 WORKDIR /app
 
