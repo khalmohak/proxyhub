@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: proxy-manager-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: proxymanager
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-proxymanager123}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - proxy-net
+
+  backend:
+    build: ./backend
+    container_name: proxy-manager-backend
+    restart: unless-stopped
+    ports:
+      - "${PROXY_PORT:-8080}:8080"
+      - "${API_PORT:-3000}:3000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: proxymanager
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-proxymanager123}
+      API_PORT: 3000
+      PROXY_PORT: 8080
+      REQUIRE_AUTH: ${REQUIRE_AUTH:-false}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-30}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - proxy-net
+
+  frontend:
+    build: ./frontend
+    container_name: proxy-manager-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8888}:80"
+    depends_on:
+      - backend
+    networks:
+      - proxy-net
+
+volumes:
+  pgdata:
+
+networks:
+  proxy-net:
+    driver: bridge
